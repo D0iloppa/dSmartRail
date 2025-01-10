@@ -1,8 +1,9 @@
 # 가상환경 생성
-python -m venv mac-SRT
+python -m venv dSmartRail
+
 
 # 활성화
-source mac-SRT/Scripts/activate
+source dSmartRail/Scripts/activate
 
 # 비활성화
 deactivate
