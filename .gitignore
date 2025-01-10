@@ -1,0 +1,4 @@
+mac-SRT/
+__pycache__/
+*.pyc
+*.pyo
