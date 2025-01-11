@@ -11,6 +11,7 @@ from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.webdriver.support.ui import Select
 import time
 
 from types import SimpleNamespace
@@ -149,7 +150,7 @@ def show_srt_intro(root):
     global_root = root
 
     # 창 크기 재조정
-    root.geometry("600x240")  # 화면 크기 축소 (높이 줄임)
+    root.geometry("600x260")  # 화면 크기 축소 (높이 줄임)
 
     # 기존 화면 초기화
     for widget in root.winfo_children():
@@ -414,6 +415,35 @@ from datetime import datetime
 import tkinter as tk
 from tkinter import messagebox
 
+# 환승역만 존재하는 경우 체크
+def check_search_result(driver):
+    """
+    환승역만 존재하는 경우를 확인하고, 메시지 박스로 알림.
+    :param driver: Selenium WebDriver 객체
+    """
+    try:
+        # alert_box 클래스의 div 요소 찾기
+        alert_box = driver.find_element(By.CSS_SELECTOR, "div.alert_box strong")
+        
+        # strong 태그의 텍스트 가져오기
+        alert_text = alert_box.text
+        
+        # 특정 텍스트가 포함되어 있는지 확인
+        if "환승으로 조회" in alert_text:
+            printlog(" 환승역만 가능한 경우입니다.")
+            return 1
+
+
+        elif "조회 결과가 없습니다" in alert_text:
+            printlog(" 조회 결과가 없습니다.")
+            return -1
+            
+        else:
+            return 0
+
+    except NoSuchElementException:
+        print("alert_box 요소를 찾을 수 없습니다.")
+
 def create_search_window(step, process_steps, step_index, driver):
     """
     새로운 창을 생성하고 창 닫힘까지 대기하며, 상태 값을 반환.
@@ -421,7 +451,7 @@ def create_search_window(step, process_steps, step_index, driver):
     # 새로운 창 생성
     input_window = tk.Toplevel(global_root)
     input_window.title("SRT 조회 정보 입력")
-    input_window.geometry("400x300")
+    input_window.geometry("400x320")
 
     # 상태 값 초기화
     input_window.result = None  # 창 닫힘 상태 관리
@@ -473,7 +503,9 @@ def create_search_window(step, process_steps, step_index, driver):
         departure = departure_var.get()
         arrival = arrival_var.get()
         date = date_entry.get()
-        time = selected_time.get()
+        selected_time_label = time_select.get()
+        time = next((option['value'] for option in time_options if option['label'] == selected_time_label), None)
+
         no_time = time_unchecked.get()
 
         # 입력값 검증
@@ -488,10 +520,56 @@ def create_search_window(step, process_steps, step_index, driver):
             return
 
         # 입력값 driver로 전달
-        printlog(f"[INFO] 검색 조건: 출발역={departure}, 도착역={arrival}, 날짜={date}, 시간={time}, 시간 무관={no_time}")
-        flag = perform_driver_search(driver, departure, arrival, date, time if not no_time else None)
+        flag = perform_driver_search(driver, departure, arrival, date, time, no_time)
+
+        if flag:
+            # 검색 결과 검증 (환승역 조회, 조회결과 없는 상태)
+            csr = check_search_result(driver)
+            if csr == -1 :
+                printlog(" 가능한 역이 존재하지 않습니다.")
+                search_result_frame.pack_forget()
+                input_window.geometry("400x320")
+                return
+
+            cto = False
+            if csr == 1 :  # 환승역만 존재하는 경우
+                printlog(" 환승역만 존재하는 경우입니다. 환승역으로 진행합니다.")
+                cto = True  
+
+            # 검색 조건 라벨 업데이트
+            label_text = f"({date} {selected_time_label}) {departure} -> {arrival}"
+            if cto:
+                label_text += " (환승만 가능)"
+            search_result_label.config(text=label_text)
+            search_result_frame.pack()  # 검색에 성공하면 프레임을 표시
+            input_window.geometry("400x360")
+        else:
+            # 검색 실패한 경우 프레임을 숨김
+            search_result_frame.pack_forget()
+            input_window.geometry("400x320")
+        
+
+            
 
     tk.Button(input_window, text="조회", command=search).pack(pady=10)
+
+    separator = tk.Frame(input_window, height=2, bd=1, relief=tk.SUNKEN)
+    separator.pack(fill=tk.X, pady=10)  
+
+    search_result_frame = tk.Frame(input_window)
+    search_result_frame.pack(pady=10)
+    search_result_frame.pack_forget()  # 최초에는 보이지 않도록 설정
+
+    def execute_search():
+        # 실행 버튼 클릭 시 수행할 작업을 여기에 추가
+        printlog("실행 버튼이 클릭되었습니다.")
+
+    execute_button = tk.Button(search_result_frame, text="실행", command=execute_search)
+    execute_button.pack(side=tk.RIGHT, padx=5)
+
+    # 검색 조건 라벨
+    search_result_label = tk.Label(search_result_frame, text="", font=("Arial", 10))
+    search_result_label.pack(side=tk.LEFT, padx=5)
 
     # 창 닫힘 이벤트 처리
     def on_close():
@@ -506,7 +584,7 @@ def create_search_window(step, process_steps, step_index, driver):
     # 창 닫힌 후 상태 값 반환
     return input_window.result
 
-def perform_driver_search(driver, departure, arrival, date, time=None):
+def perform_driver_search(driver, departure, arrival, date, time, no_time):
     """
     Selenium을 사용하여 SRT 간편조회 영역에 입력값을 설정하고 조회 수행.
     :param driver: Selenium WebDriver 객체
@@ -516,6 +594,11 @@ def perform_driver_search(driver, departure, arrival, date, time=None):
     :param time: 조회 시간 (예: '12:00' 또는 None)
     :return: True(성공), False(실패)
     """
+
+    # 옵션 전처리
+    if no_time:
+        time = "000000"  # 시간 무관인 경우
+
     try:
         # 1. SRT 메인 페이지로 이동
         driver.get("https://etk.srail.kr/main.do")
@@ -529,30 +612,48 @@ def perform_driver_search(driver, departure, arrival, date, time=None):
             printlog(f"{TAGS.RED}[ERROR] 간편조회 영역을 찾을 수 없습니다.{TAGS.RED_END}")
             return False
 
-        # 3. 출발지 입력
-        departure_input = simple_search_form.find_element(By.ID, "dptRsStnCdNm")
-        departure_input.clear()
-        departure_input.send_keys(departure)
+        
+        
+        # 3. 출발지 입력 | dptRsStnCd
+        departure_select = Select(simple_search_form.find_element(By.ID, "dptRsStnCd"))
+        departure_select.select_by_visible_text(departure)
 
-        # 4. 도착지 입력
-        arrival_input = simple_search_form.find_element(By.ID, "arvRsStnCdNm")
-        arrival_input.clear()
-        arrival_input.send_keys(arrival)
+        # 4. 도착지 입력 | arvRsStnCd
+        arrival_select = Select(simple_search_form.find_element(By.ID, "arvRsStnCd"))
+        arrival_select.select_by_visible_text(arrival)
 
         # 5. 날짜 입력
-        date_input = simple_search_form.find_element(By.ID, "dptDt")
-        date_input.clear()
+        '''
+        date_input = simple_search_form.find_element(By.NAME, "dptDt")
         date_input.send_keys(date)
+        '''
+        calendar_button = simple_search_form.find_element(By.CSS_SELECTOR, "input.calendar2")
+        calendar_button.click()
 
-        # 6. 시간 입력 (시간 무관인 경우 생략)
-        if time:
-            time_input = simple_search_form.find_element(By.ID, "dptTm")
-            time_input.clear()
-            time_input.send_keys(time)
+        formatted_date = date.replace(".", "")
+
+        # 새 창이 열릴 때까지 기다림
+        WebDriverWait(driver, 10).until(EC.number_of_windows_to_be(2))
+
+        # 새 창으로 전환
+        original_window = driver.current_window_handle
+        new_window = [window for window in driver.window_handles if window != original_window][0]
+        driver.switch_to.window(new_window)
+
+        # 새 창에서 selectDateInfo 함수를 실행
+        driver.execute_script(f"selectDateInfo('{formatted_date}');")
+
+        # 원래 창으로 돌아옴
+        driver.switch_to.window(original_window)
+
+
+        # 6. 시간 입력 | dptTm
+        time_select = Select(simple_search_form.find_element(By.ID, "dptTm"))
+        time_select.select_by_value(time)
 
         # 7. 조회 버튼 클릭
-        search_button = simple_search_form.find_element(By.ID, "search-button")
-        search_button.click()
+        search_button = simple_search_form.find_element(By.CSS_SELECTOR, "a.btn_midium.wp100.btn_burgundy_dark.corner.val_m")
+        driver.execute_script("arguments[0].click();", search_button)
 
         printlog(f"[INFO] 조회 수행: 출발지={departure}, 도착지={arrival}, 날짜={date}, 시간={time or '시간 무관'}")
         return True
