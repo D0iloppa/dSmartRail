@@ -627,8 +627,7 @@ def create_search_window(step, process_steps, step_index, driver):
 
                 printlog(f"{TAGS.RED}[TASK:{current_time}] 예약가능한 자리가 존재하지 않습니다.{TAGS.RED_END}\n")
 
-            # 재시도 간격 100ms
-            schedule_task(100, execute_search)
+            schedule_task(500, execute_search)
 
             
         except Exception as e:
