@@ -220,6 +220,7 @@ def show_srt_intro(root):
 
 step = 1
 
+# 전체 프로세스 wraping 함수
 def start_process(root):
     """전체 프로세스를 감싸는 래핑 함수"""
     global step, driver  # 전역 변수 사용
@@ -266,7 +267,8 @@ def start_process(root):
             elif step_index == 3:
                 # STEP 3: 이후 작업 진행
                 next_step()
-                printlog(f"[STEP {step}] 자동 예매 대상 검색")
+                printlog(f"[STEP {step}] 예매 대상 검색")
+                printlog(f"[NOTICE]{TAGS.BOLD}{TAGS.BLUE}자동 예매를 위한 창이 실행됩니다.{TAGS.BOLD_END}{TAGS.BLUE_END} \n 브라우저가 아닌 [SRT 조회 정보 입력]창을 통해서 제어해주세요.")
                 reserveChk = create_search_window(step, process_steps, step_index, driver)
                 if not reserveChk:  # 예매매 실패 시
                     printlog(f"{TAGS.RED}[STEP {step}:ERROR] 예매 대상 검색 실패. 브라우저를 종료합니다.{TAGS.RED_END}")
@@ -287,10 +289,7 @@ def start_process(root):
     process_steps()
 
 
-    
-
-    
-
+# 드라이버 init
 def driver_entry(main_page_url):
     """Selenium 브라우저 객체 생성 및 반환"""
     try:
@@ -317,7 +316,7 @@ def driver_entry(main_page_url):
         return None
 
 
-
+# 로그인 되었는지 확인
 def is_logged_in(driver):
     """
     로그인 여부를 확인. 현재 DOM 상태를 기반으로 로그인 여부를 반환.
@@ -346,9 +345,7 @@ def is_logged_in(driver):
         print(f"[DEBUG] 예외 발생: {e}")
         raise  # 예외 발생 시 로그인되지 않은 상태로 간주
 
-
-
-
+# 로그인을 모니터링하고, 로그인이 필요한 경우 로그인 페이지로 이동
 def monitor_login(driver, login_page_url, retryCnt=3, timeout = 60):
     """
     로그인 상태를 확인하고, 로그인 필요 시 로그인 페이지로 이동.
@@ -447,9 +444,9 @@ def check_search_result(driver):
         return 0
 
     except NoSuchElementException:
-        print("조회 성공")
         return 0
 
+# 자동 예약을 위한 modal창 생성
 def create_search_window(step, process_steps, step_index, driver):
     """
     새로운 창을 생성하고 창 닫힘까지 대기하며, 상태 값을 반환.
@@ -539,13 +536,27 @@ def create_search_window(step, process_steps, step_index, driver):
 
             cto = False
             if csr == 1 :  # 환승역만 존재하는 경우
-                printlog(" 환승역만 존재하는 경우입니다. 환승역으로 진행합니다.")
-                cto = True  
+                printlog(" 환승역만 존재합니다.")
+                # 현재는 비활성화 (환승역의 경우 KTX와 SRT를 따로 조회해야함)
+                search_result_frame.pack_forget()
+                input_window.geometry("400x320")
+                #cto = True
+                return 
+                
 
             # 검색 조건 라벨 업데이트
             label_text = f"({date} {selected_time_label}) {departure} -> {arrival}"
             if cto:
                 label_text += " (환승만 가능)"
+
+            reservation_links = checkTimeTable(driver, no_time, economy_only=False)
+            if len(reservation_links) == 1:
+                do_reserve(driver, reservation_links[0])
+                printlog("예약을 진행하겠습니다.")
+                return
+            tk.messagebox.showinfo("알림", "예약가능한 자리가 존재하지 않습니다. [실행] 버튼을 눌러 자동 예약 조회를 시작해주세요")
+
+            printlog(" 예약가능한 자리가 존재하지 않습니다.\n SRT 조회 정보 입력 창의 [실행] 버튼을 눌러 자동 예약 조회를 시작해주세요")
             search_result_label.config(text=label_text)
             search_result_frame.pack()  # 검색에 성공하면 프레임을 표시
             input_window.geometry("400x380")
@@ -567,8 +578,58 @@ def create_search_window(step, process_steps, step_index, driver):
     search_result_frame.pack_forget()  # 최초에는 보이지 않도록 설정
 
     def execute_search():
-        # 실행 버튼 클릭 시 수행할 작업을 여기에 추가
-        printlog("실행 버튼이 클릭되었습니다.")
+        try:
+
+            departure = departure_var.get()
+            arrival = arrival_var.get()
+            date = date_entry.get()
+            selected_time_label = time_select.get()
+            time = next((option['value'] for option in time_options if option['label'] == selected_time_label), None)
+            no_time = time_unchecked.get()
+
+            # 현재 페이지에서 "조회하기" 버튼을 찾고 클릭
+            search_button = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "input.btn_large.wx200.btn_burgundy_dark2.val_m.corner.inquery_btn"))
+            )
+            driver.execute_script("arguments[0].click();", search_button)
+
+            # 검색 결과 검증 (환승역 조회, 조회결과 없는 상태)
+            csr = check_search_result(driver)
+            if csr == -1:
+                printlog(" 가능한 역이 존재하지 않습니다.")
+                search_result_frame.pack_forget()
+                input_window.geometry("400x320")
+                return
+
+            cto = False
+            if csr == 1:  # 환승역만 존재하는 경우
+                printlog(" 환승역만 존재합니다.")
+                # 현재는 비활성화 (환승역의 경우 KTX와 SRT를 따로 조회해야함)
+                search_result_frame.pack_forget()
+                input_window.geometry("400x320")
+                #cto = True
+                return 
+
+            # 검색 조건 라벨 업데이트
+            label_text = f"({date} {selected_time_label}) {departure} -> {arrival}"
+            if cto:
+                label_text += " (환승만 가능)"
+
+            reservation_links = checkTimeTable(driver, no_time, economy_only=False)
+            if reservation_links:
+                for link in reservation_links:
+                    if do_reserve(driver, link):
+                        return
+            else:
+                printlog(f" - {TAGS.RED}예약가능한 자리가 존재하지 않습니다.{TAGS.RED_END}\n")
+
+            # 재시도 간격 100ms
+            schedule_task(100, execute_search)
+
+            
+        except Exception as e:
+            printlog(f"{TAGS.RED}[ERROR] 실행 중 예외 발생: {e}{TAGS.RED_END}")
+
 
     execute_button = tk.Button(search_result_frame, text="실행", command=execute_search)
     execute_button.pack(side=tk.RIGHT, padx=5)
@@ -590,6 +651,7 @@ def create_search_window(step, process_steps, step_index, driver):
     # 창 닫힌 후 상태 값 반환
     return input_window.result
 
+# 검색 수행
 def perform_driver_search(driver, departure, arrival, date, time, no_time):
     """
     Selenium을 사용하여 SRT 간편조회 영역에 입력값을 설정하고 조회 수행.
@@ -670,6 +732,7 @@ def perform_driver_search(driver, departure, arrival, date, time, no_time):
         printlog(f"{TAGS.RED}[ERROR] 간편조회 수행 중 예외 발생: {e}{TAGS.RED_END}")
         return False
 
+# 기본 역정보 로딩
 def fetch_station_options(driver):
     """
     Selenium WebDriver를 이용하여 출발역과 도착역 옵션을 파싱.
@@ -693,6 +756,7 @@ def fetch_station_options(driver):
         printlog(f"{TAGS.RED}[ERROR] 역 옵션 파싱 실패: {e}{TAGS.RED_END}")
         return []
 
+# 기본 시간정보 로딩
 def fetch_time_options(driver):
     """
     SRT 페이지에서 시간 옵션을 파싱하여 반환.
@@ -719,7 +783,6 @@ def fetch_time_options(driver):
         printlog(f"{TAGS.RED}[ERROR] 시간 옵션 파싱 중 예외 발생: {e}{TAGS.RED_END}")
         return []
 
-
 def validate_date_format(date_str):
     """
     입력된 날짜가 YYYY.MM.DD 형식인지 검증.
@@ -730,4 +793,115 @@ def validate_date_format(date_str):
         datetime.strptime(date_str, "%Y.%m.%d")
         return True
     except ValueError:
+        return False
+
+# 예약 시간표 확인
+def checkTimeTable(driver, no_time=False, economy_only=False):
+    """
+    시간표를 확인하고 테이블의 tbody 요소를 반환.
+    :param driver: Selenium WebDriver 객체
+    :param no_time: 시간 무관 여부
+    :param economy_only: 일반석만 조회 여부
+    :return: 테이블의 tbody 요소 또는 None
+    """
+    try:
+        # result-form 하위의 tbl_wrap th_thead 내의 테이블을 찾음
+        table = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "form#result-form div.tbl_wrap.th_thead table"))
+        )
+
+        thead = table.find_element(By.TAG_NAME, "thead")
+        tbody = table.find_element(By.TAG_NAME, "tbody")
+        rows = tbody.find_elements(By.TAG_NAME, "tr")
+
+         # thead 내의 th 요소 수집
+        headers = thead.find_elements(By.TAG_NAME, "th")
+
+         # tbody 내의 모든 tr 요소 수집
+        if len(rows) == 0:
+            print("조회 결과가 없습니다.")
+            return None
+
+        target_rows = []
+
+        if no_time:
+            target_rows = rows
+        else:
+            target_rows.append(rows[0])
+
+         # 예약하기 링크 수집
+        reservation_links = []
+        '''
+        for row in target_rows:
+            tds = row.find_elements(By.TAG_NAME, "td")
+            for index, td in enumerate(tds):
+                # 매칭되는 th의 라벨 읽기
+                header_label = headers[index].text
+                links = td.find_elements(By.TAG_NAME, "a")
+                for link in links:
+                    if "예약하기" in link.text:
+                        if not economy_only or (economy_only and header_label == "일반실"):
+                            reservation_links.append((header_label, link))
+        '''
+
+
+        for row in target_rows:
+            tds = row.find_elements(By.TAG_NAME, "td")
+            for index, td in enumerate(tds):
+                # 매칭되는 th의 라벨 읽기
+                header_label = headers[index].text
+                links = td.find_elements(By.TAG_NAME, "a")
+                for link in links:
+                    if "예약하기" in link.text:
+                        if not economy_only or (economy_only and header_label == "일반실"):
+                            reservation_links.append((header_label, link))
+                            break  # 첫 번째 "예약하기" 링크를 찾으면 내부 루프 종료
+                if reservation_links:
+                    break  # 첫 번째 "예약하기" 링크를 찾으면 중간 루프 종료
+            if reservation_links:
+                break  # 첫 번째 "예약하기" 링크를 찾으면 외부 루프 종료
+
+        return reservation_links
+
+        
+    except NoSuchElementException:
+        print("테이블의 요소를 찾을 수 없습니다.")
+        return None
+    except TimeoutException:
+        print("테이블의 요소 로딩 시간 초과.")
+        return None
+
+# 예약하기
+def do_reserve(driver, reservation_target):
+    """
+    예약하기 링크를 클릭하여 예약을 진행.
+    :param driver: Selenium WebDriver 객체
+    :param reservation_target: 예약하기 링크 요소
+    :return: True(성공), False(실패)
+    """
+
+
+    
+    try:
+        # reservation_target에서 예약하기 링크 요소를 추출
+        header_label, reservation_link = reservation_target
+        
+
+        driver.execute_script("arguments[0].click();", reservation_link)
+
+        
+        # 페이지 이동이 완료될 때까지 기다림 | 예약완료 페이지 : 'confirmReservationInfo'
+        WebDriverWait(driver, 10).until(EC.url_changes(driver.current_url))
+
+        # 현재 URL에 confirmReservationInfo가 포함되어 있는지 확인
+        if "confirmReservationInfo" in driver.current_url:
+            printlog("예약에 성공하였습니다.")
+            return True
+        else:
+            return False
+
+
+        return True
+    except Exception as e:
+        print(f"예약하기 링크 클릭 중 예외 발생: {e}")
         return False
