@@ -268,7 +268,7 @@ def start_process(root):
                 # STEP 3: 이후 작업 진행
                 next_step()
                 printlog(f"[STEP {step}] 예매 대상 검색")
-                printlog(f"[NOTICE]{TAGS.BOLD}{TAGS.BLUE}자동 예매를 위한 창이 실행됩니다.{TAGS.BOLD_END}{TAGS.BLUE_END} \n 브라우저가 아닌 [SRT 조회 정보 입력]창을 통해서 제어해주세요.")
+                printlog(f"[NOTICE]자동 예매를 위한 창이 실행됩니다.\n {TAGS.BOLD}{TAGS.BLUE}브라우저가 아닌 [SRT 조회 정보 입력]창을 통해서 제어해주세요.{TAGS.BLUE_END}{TAGS.BOLD_END}")
                 reserveChk = create_search_window(step, process_steps, step_index, driver)
                 if not reserveChk:  # 예매매 실패 시
                     printlog(f"{TAGS.RED}[STEP {step}:ERROR] 예매 대상 검색 실패. 브라우저를 종료합니다.{TAGS.RED_END}")
@@ -388,6 +388,7 @@ def monitor_login(driver, login_page_url, retryCnt=3, timeout = 60):
             return True  # 로그인 성공
 
         printlog(" - 로그인이 확인되지 않은 상태입니다. 로그인 페이지로 이동합니다.\n")
+        printlog(" - 브라우저에서 로그인을 진행해주세요\n")
         driver.get(login_page_url)
 
         # STEP 2: 로그인 상태 재시도
@@ -398,6 +399,7 @@ def monitor_login(driver, login_page_url, retryCnt=3, timeout = 60):
                 return True  # 로그인 성공
 
             printlog(" - 로그인을 확인하지 못했습니다. 로그인 페이지로 이동합니다.\n")
+            printlog(" - 브라우저에서 로그인을 진행해주세요\n")
             driver.get(login_page_url)
 
         return False  # 최대 재시도 초과
@@ -556,7 +558,7 @@ def create_search_window(step, process_steps, step_index, driver):
                 return
             tk.messagebox.showinfo("알림", "예약가능한 자리가 존재하지 않습니다. [실행] 버튼을 눌러 자동 예약 조회를 시작해주세요")
 
-            printlog(" 예약가능한 자리가 존재하지 않습니다.\n SRT 조회 정보 입력 창의 [실행] 버튼을 눌러 자동 예약 조회를 시작해주세요")
+            printlog(" 예약가능한 자리가 존재하지 않습니다.\n [SRT 조회 정보 입력] 창의 [실행] 버튼을 눌러 자동 예약 조회를 시작해주세요")
             search_result_label.config(text=label_text)
             search_result_frame.pack()  # 검색에 성공하면 프레임을 표시
             input_window.geometry("400x380")
@@ -621,7 +623,9 @@ def create_search_window(step, process_steps, step_index, driver):
                     if do_reserve(driver, link):
                         return
             else:
-                printlog(f" - {TAGS.RED}예약가능한 자리가 존재하지 않습니다.{TAGS.RED_END}\n")
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+
+                printlog(f"{TAGS.RED}[TASK:{current_time}] 예약가능한 자리가 존재하지 않습니다.{TAGS.RED_END}\n")
 
             # 재시도 간격 100ms
             schedule_task(100, execute_search)
