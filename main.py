@@ -8,6 +8,15 @@ def main():
     root.title("Smart Rail 예매 프로그램")
     root.geometry("400x260")  # 창 크기 조정
 
+    # 초기 화면 구성
+    setup_main_screen(root)
+
+    root.mainloop()
+
+def setup_main_screen(root):
+    """
+    메인 화면 UI 구성
+    """
     # 상단 제목 라벨
     tk.Label(root, text="기차 예약 프로그램", font=("Arial", 18)).pack(pady=20)
 
@@ -37,6 +46,12 @@ def main():
     tk.Button(root, text="시작", command=start_program, width=10).pack(pady=2)
 
     # Footer (Developer : @d0il | Buy me a coffee)
+    setup_footer(root)
+
+def setup_footer(root):
+    """
+    Footer 구성
+    """
     def open_github():
         webbrowser.open("https://github.com/D0iloppa")  # GitHub 프로필 링크
 
@@ -61,8 +76,6 @@ def main():
     coffee_label = tk.Label(footer_frame, text="Buy me a coffee", font=("Arial", 8), fg="black", cursor="hand2")
     coffee_label.pack(side=tk.LEFT)
     coffee_label.bind("<Button-1>", lambda e: open_coffee_link())
-
-    root.mainloop()
 
 
 if __name__ == "__main__":
