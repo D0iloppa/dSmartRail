@@ -580,58 +580,56 @@ def create_search_window(step, process_steps, step_index, driver):
     search_result_frame.pack_forget()  # 최초에는 보이지 않도록 설정
 
     def execute_search():
-        try:
+    try:
+        departure = departure_var.get()
+        arrival = arrival_var.get()
+        date = date_entry.get()
+        selected_time_label = time_select.get()
+        time = next((option['value'] for option in time_options if option['label'] == selected_time_label), None)
+        no_time = time_unchecked.get()
 
-            departure = departure_var.get()
-            arrival = arrival_var.get()
-            date = date_entry.get()
-            selected_time_label = time_select.get()
-            time = next((option['value'] for option in time_options if option['label'] == selected_time_label), None)
-            no_time = time_unchecked.get()
+        # 현재 페이지에서 "조회하기" 버튼을 찾고 클릭
+        search_button = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "input.btn_large.wx200.btn_burgundy_dark2.val_m.corner.inquery_btn"))
+        )
+        driver.execute_script("arguments[0].click();", search_button)
 
-            # 현재 페이지에서 "조회하기" 버튼을 찾고 클릭
-            search_button = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "input.btn_large.wx200.btn_burgundy_dark2.val_m.corner.inquery_btn"))
-            )
-            driver.execute_script("arguments[0].click();", search_button)
+        # 검색 결과 검증 (환승역 조회, 조회결과 없는 상태)
+        csr = check_search_result(driver)
+        if csr == -1:
+            printlog(" 가능한 역이 존재하지 않습니다.")
+            search_result_frame.pack_forget()
+            input_window.geometry("400x320")
+            return
 
-            # 검색 결과 검증 (환승역 조회, 조회결과 없는 상태)
-            csr = check_search_result(driver)
-            if csr == -1:
-                printlog(" 가능한 역이 존재하지 않습니다.")
-                search_result_frame.pack_forget()
-                input_window.geometry("400x320")
-                return
+        cto = False
+        if csr == 1:  # 환승역만 존재하는 경우
+            printlog(" 환승역만 존재합니다.")
+            # 현재는 비활성화 (환승역의 경우 KTX와 SRT를 따로 조회해야함)
+            search_result_frame.pack_forget()
+            input_window.geometry("400x320")
+            #cto = True
+            return 
 
-            cto = False
-            if csr == 1:  # 환승역만 존재하는 경우
-                printlog(" 환승역만 존재합니다.")
-                # 현재는 비활성화 (환승역의 경우 KTX와 SRT를 따로 조회해야함)
-                search_result_frame.pack_forget()
-                input_window.geometry("400x320")
-                #cto = True
-                return 
+        # 검색 조건 라벨 업데이트
+        label_text = f"({date} {selected_time_label}) {departure} -> {arrival}"
+        if cto:
+            label_text += " (환승만 가능)"
 
-            # 검색 조건 라벨 업데이트
-            label_text = f"({date} {selected_time_label}) {departure} -> {arrival}"
-            if cto:
-                label_text += " (환승만 가능)"
+        reservation_links = checkTimeTable(driver, no_time, economy_only=False)
+        if reservation_links:
+            for link in reservation_links:
+                if do_reserve(driver, link):
+                    return
+        else:
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+            printlog(f"{TAGS.RED}[TASK:{current_time}] 예약가능한 자리가 존재하지 않습니다.{TAGS.RED_END}\n")
 
-            reservation_links = checkTimeTable(driver, no_time, economy_only=False)
-            if reservation_links:
-                for link in reservation_links:
-                    if do_reserve(driver, link):
-                        return
-            else:
-                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-
-                printlog(f"{TAGS.RED}[TASK:{current_time}] 예약가능한 자리가 존재하지 않습니다.{TAGS.RED_END}\n")
-
-            schedule_task(500, execute_search)
-
-            
-        except Exception as e:
-            printlog(f"{TAGS.RED}[ERROR] 실행 중 예외 발생: {e}{TAGS.RED_END}")
+        # 재시도 간격 500ms
+        schedule_task(500, execute_search)
+    except Exception as e:
+        printlog(f"{TAGS.RED}[ERROR] 실행 중 예외 발생: {e}{TAGS.RED_END}")
+        schedule_task(500, execute_search)
 
 
     execute_button = tk.Button(search_result_frame, text="실행", command=execute_search)
