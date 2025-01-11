@@ -18,3 +18,6 @@ pip freeze > requirements.txt
 # 의존성 파일 설치
 pip install -r requirements.txt
 
+# 배포
+pyinstaller --onefile --windowed main.py
+
