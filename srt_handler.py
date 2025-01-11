@@ -422,6 +422,12 @@ def check_search_result(driver):
     :param driver: Selenium WebDriver 객체
     """
     try:
+        current_url = driver.current_url
+        if 'selectScheduleList' not in current_url:
+            print(f"현재 페이지의 URL에 'selectScheduleList'가 포함되어 있지 않습니다. | {current_url}")
+            return -1
+
+
         # alert_box 클래스의 div 요소 찾기
         alert_box = driver.find_element(By.CSS_SELECTOR, "div.alert_box strong")
         
@@ -434,15 +440,15 @@ def check_search_result(driver):
             return 1
 
 
-        elif "조회 결과가 없습니다" in alert_text:
+        if "조회 결과가 없습니다" in alert_text:
             printlog(" 조회 결과가 없습니다.")
             return -1
             
-        else:
-            return 0
+        return 0
 
     except NoSuchElementException:
-        print("alert_box 요소를 찾을 수 없습니다.")
+        print("조회 성공")
+        return 0
 
 def create_search_window(step, process_steps, step_index, driver):
     """
@@ -542,7 +548,7 @@ def create_search_window(step, process_steps, step_index, driver):
                 label_text += " (환승만 가능)"
             search_result_label.config(text=label_text)
             search_result_frame.pack()  # 검색에 성공하면 프레임을 표시
-            input_window.geometry("400x360")
+            input_window.geometry("400x380")
         else:
             # 검색 실패한 경우 프레임을 숨김
             search_result_frame.pack_forget()
@@ -654,6 +660,8 @@ def perform_driver_search(driver, departure, arrival, date, time, no_time):
         # 7. 조회 버튼 클릭
         search_button = simple_search_form.find_element(By.CSS_SELECTOR, "a.btn_midium.wp100.btn_burgundy_dark.corner.val_m")
         driver.execute_script("arguments[0].click();", search_button)
+
+        WebDriverWait(driver, 10).until(EC.url_changes(driver.current_url))
 
         printlog(f"[INFO] 조회 수행: 출발지={departure}, 도착지={arrival}, 날짜={date}, 시간={time or '시간 무관'}")
         return True
