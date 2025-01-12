@@ -19,6 +19,7 @@ from types import SimpleNamespace
 
 global_root = None  # 모듈 내 전역 변수
 log_text = None  # 로그 텍스트 위젯도 전역 변수
+run_flag = False  # 실행 플래그
 
 def show_srt_interface(root):
     """SRT 핸들러 엔트리 포인트: 기존 화면에서 SRT 화면으로 전환"""
@@ -512,6 +513,10 @@ def create_search_window(step, process_steps, step_index, driver):
 
     # 조회 버튼
     def search(no_alert=True):
+        
+        # 기존 실행중이던 함수 종료
+        stop_search()
+
         departure = departure_var.get()
         arrival = arrival_var.get()
         date = date_entry.get()
@@ -554,7 +559,7 @@ def create_search_window(step, process_steps, step_index, driver):
                 
 
             # 검색 조건 라벨 업데이트
-            label_text = f"({date} {selected_time_label}) {departure} -> {arrival}"
+            label_text = f"({date} {'시간 무관' if no_time else selected_time_label}) {departure} -> {arrival}"
             if cto:
                 label_text += " (환승만 가능)"
 
@@ -569,7 +574,7 @@ def create_search_window(step, process_steps, step_index, driver):
             printlog(" 예약가능한 자리가 존재하지 않습니다.\n [SRT 조회 정보 입력] 창의 [실행] 버튼을 눌러 자동 예약 조회를 시작해주세요")
             search_result_label.config(text=label_text)
             search_result_frame.pack()  # 검색에 성공하면 프레임을 표시
-            input_window.geometry("400x380")
+            input_window.geometry("400x390")
         else:
             # 검색 실패한 경우 프레임을 숨김
             search_result_frame.pack_forget()
@@ -587,7 +592,20 @@ def create_search_window(step, process_steps, step_index, driver):
     search_result_frame.pack(pady=10)
     search_result_frame.pack_forget()  # 최초에는 보이지 않도록 설정
 
-    def execute_search():
+    def stop_search():
+        global run_flag
+        run_flag = False
+
+    def execute_search(start=False):
+
+        global run_flag
+
+        if start:
+            run_flag = True
+
+        if not run_flag:
+            return
+
         try:
             departure = departure_var.get()
             arrival = arrival_var.get()
@@ -622,7 +640,7 @@ def create_search_window(step, process_steps, step_index, driver):
                 return 
 
             # 검색 조건 라벨 업데이트
-            label_text = f"({date} {selected_time_label}) {departure} -> {arrival}"
+            label_text = f"({date} {'시간 무관' if no_time else selected_time_label}) {departure} -> {arrival}"
             if cto:
                 label_text += " (환승만 가능)"
 
@@ -633,7 +651,7 @@ def create_search_window(step, process_steps, step_index, driver):
                         return
             else:
                 current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-                printlog(f"{TAGS.RED}[TASK:{current_time}] 예약가능한 자리가 존재하지 않습니다.{TAGS.RED_END}\n")
+                printlog(f"{TAGS.RED}[TASK:{current_time}] {label_text}\n - 예약가능한 자리가 존재하지 않습니다.{TAGS.RED_END}\n")
 
             # 재시도 간격 500ms
             schedule_task(retry_term, execute_search)
@@ -661,7 +679,7 @@ def create_search_window(step, process_steps, step_index, driver):
             printlog(f"{TAGS.RED}[ERROR] 실행 중 예외 발생: {e}{TAGS.RED_END}")
 
 
-    execute_button = tk.Button(search_result_frame, text="실행", command=execute_search)
+    execute_button = tk.Button(search_result_frame, text="실행", command=lambda: execute_search(start=True))
     execute_button.pack(side=tk.RIGHT, padx=5)
 
     # 검색 조건 라벨
