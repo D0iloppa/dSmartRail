@@ -12,6 +12,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.support.ui import Select
+from selenium.common.exceptions import StaleElementReferenceException
 import time
 
 from types import SimpleNamespace
@@ -268,7 +269,7 @@ def start_process(root):
                 # STEP 3: 이후 작업 진행
                 next_step()
                 printlog(f"[STEP {step}] 예매 대상 검색")
-                printlog(f"[NOTICE]자동 예매를 위한 창이 실행됩니다.\n {TAGS.BOLD}{TAGS.BLUE}브라우저가 아닌 [SRT 조회 정보 입력]창을 통해서 제어해주세요.{TAGS.BLUE_END}{TAGS.BOLD_END}")
+                printlog(f"[NOTICE]자동 예매를 위한 창이 실행됩니다.\n {TAGS.BOLD}{TAGS.BLUE}브라우저가 아닌 [SRT 조회 정보 입력]창을 통해서 제어해주세요.{TAGS.BLUE_END}{TAGS.BOLD_END}\n")
                 reserveChk = create_search_window(step, process_steps, step_index, driver)
                 if not reserveChk:  # 예매매 실패 시
                     printlog(f"{TAGS.RED}[STEP {step}:ERROR] 예매 대상 검색 실패. 브라우저를 종료합니다.{TAGS.RED_END}")
@@ -300,6 +301,12 @@ def driver_entry(main_page_url):
 
         # 브라우저 객체 생성
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+
+        def interceptor(request):
+            if 'mbuster_meta.js' in request.path:
+                print(f"Loading file: {request.url}")
+
+        driver.request_interceptor = interceptor
 
         # 지정된 URL로 이동
         driver.get(main_page_url)
@@ -504,7 +511,7 @@ def create_search_window(step, process_steps, step_index, driver):
     tk.Checkbutton(input_window, text="시간 무관", variable=time_unchecked).pack(pady=5)
 
     # 조회 버튼
-    def search():
+    def search(no_alert=True):
         departure = departure_var.get()
         arrival = arrival_var.get()
         date = date_entry.get()
@@ -556,7 +563,8 @@ def create_search_window(step, process_steps, step_index, driver):
                 do_reserve(driver, reservation_links[0])
                 printlog("예약을 진행하겠습니다.")
                 return
-            tk.messagebox.showinfo("알림", "예약가능한 자리가 존재하지 않습니다. [실행] 버튼을 눌러 자동 예약 조회를 시작해주세요")
+            if no_alert == True:
+                tk.messagebox.showinfo("알림", "예약가능한 자리가 존재하지 않습니다. [실행] 버튼을 눌러 자동 예약 조회를 시작해주세요")
 
             printlog(" 예약가능한 자리가 존재하지 않습니다.\n [SRT 조회 정보 입력] 창의 [실행] 버튼을 눌러 자동 예약 조회를 시작해주세요")
             search_result_label.config(text=label_text)
@@ -588,8 +596,10 @@ def create_search_window(step, process_steps, step_index, driver):
             time = next((option['value'] for option in time_options if option['label'] == selected_time_label), None)
             no_time = time_unchecked.get()
 
+            retry_term = 1333
+
             # 현재 페이지에서 "조회하기" 버튼을 찾고 클릭
-            search_button = WebDriverWait(driver, 10).until(
+            search_button = WebDriverWait(driver, 5).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "input.btn_large.wx200.btn_burgundy_dark2.val_m.corner.inquery_btn"))
             )
             driver.execute_script("arguments[0].click();", search_button)
@@ -626,10 +636,29 @@ def create_search_window(step, process_steps, step_index, driver):
                 printlog(f"{TAGS.RED}[TASK:{current_time}] 예약가능한 자리가 존재하지 않습니다.{TAGS.RED_END}\n")
 
             # 재시도 간격 500ms
-            schedule_task(500, execute_search)
+            schedule_task(retry_term, execute_search)
+        except StaleElementReferenceException as se:
+            printlog(f"{TAGS.RED}[ERROR] 너무 빠른 실행 예외 발생: {se.msg}{TAGS.RED_END}")
+            schedule_task(retry_term, execute_search)
+
+        except TimeoutException as te:
+            # 차단되서 브레이크 되었는지 확인 필요
+            try:
+                blocked_message = driver.find_element(By.XPATH, "//*[contains(text(), 'Your IP Address Blocked due to abnormal access')]")
+                if blocked_message:
+                    printlog(f"{TAGS.RED}[ERROR] IP 주소가 비정상적인 접근으로 차단되었습니다.{TAGS.RED_END}\n")
+                    # Fallback 로직 구현
+                    search(no_alert=True)
+                    schedule_task(500, execute_search)
+
+            except NoSuchElementException:
+                pass
+
+            printlog(f"{TAGS.RED}[ERROR] 프로세스 브레이크 발생: {te.msg}{TAGS.RED_END}")
+
+
         except Exception as e:
             printlog(f"{TAGS.RED}[ERROR] 실행 중 예외 발생: {e}{TAGS.RED_END}")
-            schedule_task(500, execute_search)
 
 
     execute_button = tk.Button(search_result_frame, text="실행", command=execute_search)
@@ -671,7 +700,7 @@ def perform_driver_search(driver, departure, arrival, date, time, no_time):
     try:
         # 1. SRT 메인 페이지로 이동
         driver.get("https://etk.srail.kr/main.do")
-        WebDriverWait(driver, 10).until(
+        WebDriverWait(driver, 5).until(
             EC.presence_of_element_located((By.ID, "wrap"))
         )
 
@@ -702,7 +731,7 @@ def perform_driver_search(driver, departure, arrival, date, time, no_time):
         formatted_date = date.replace(".", "")
 
         # 새 창이 열릴 때까지 기다림
-        WebDriverWait(driver, 10).until(EC.number_of_windows_to_be(2))
+        WebDriverWait(driver, 5).until(EC.number_of_windows_to_be(2))
 
         # 새 창으로 전환
         original_window = driver.current_window_handle
@@ -724,7 +753,7 @@ def perform_driver_search(driver, departure, arrival, date, time, no_time):
         search_button = simple_search_form.find_element(By.CSS_SELECTOR, "a.btn_midium.wp100.btn_burgundy_dark.corner.val_m")
         driver.execute_script("arguments[0].click();", search_button)
 
-        WebDriverWait(driver, 10).until(EC.url_changes(driver.current_url))
+        WebDriverWait(driver, 5).until(EC.url_changes(driver.current_url))
 
         printlog(f"[INFO] 조회 수행: 출발지={departure}, 도착지={arrival}, 날짜={date}, 시간={time or '시간 무관'}")
         return True
@@ -807,7 +836,7 @@ def checkTimeTable(driver, no_time=False, economy_only=False):
     """
     try:
         # result-form 하위의 tbl_wrap th_thead 내의 테이블을 찾음
-        table = WebDriverWait(driver, 10).until(
+        table = WebDriverWait(driver, 5).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "form#result-form div.tbl_wrap.th_thead table"))
         )
 
